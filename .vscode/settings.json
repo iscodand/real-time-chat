@@ -1,8 +1,0 @@
-{
-  "files.associations": {
-    "*.embeddedhtml": "html",
-    "libwebsockets.h": "c",
-    "string.h": "c"
-  },
-  "C_Cpp.intelliSenseEngineFallback": "enabled"
-}
