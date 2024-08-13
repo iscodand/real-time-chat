@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket Server</title>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <script src="app.js"></script>
+</head>
+<body>
+    <section>
+        <div>
+            <form onsubmit="return false;">
+                <label for="message">Digite sua mensagem</label>
+                <input id="message" value="teste" />
+                <button onclick="sendMyMessages()">Test</button>
+            </form>
+
+            <div>
+                <h1>Messages</h1>
+                <p id="messageSent"></p>
+            </div>
+
+            <div id="messages" class="messages"></div>
+            <div id="connections"></div>
+        </div>
+    </section>
+</body>
+</html>
