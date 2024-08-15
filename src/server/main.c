@@ -9,13 +9,6 @@
 #define MAX_MESSAGE_SIZE 128
 #define MAX_USERNAME_SIZE 128
 
-struct rooms
-{
-    char roomId[32];
-    char roomName[32];
-    int usersCount;
-};
-
 struct per_session_data
 {
     struct lws *wsi;                // sessao
@@ -25,9 +18,10 @@ struct per_session_data
     size_t len;                     // tamanho em bytes
 };
 
-// TODO => create rooms and shit
-
+// create max clients per room
 struct per_session_data *clients[MAX_CLIENTS];
+
+// create client count per room
 size_t client_count = 0;
 
 void on_user_connected(struct per_session_data *pss)
@@ -79,6 +73,7 @@ void send_message_to_users(struct per_session_data *pss, char *message, int mess
 
 void callback_receive(struct per_session_data *pss, void *in, size_t len)
 {
+    // isco: first message is user username
     if (pss->username[0] == '\0')
     {
         strncpy(pss->username, (const char *)in, len);
@@ -88,6 +83,8 @@ void callback_receive(struct per_session_data *pss, void *in, size_t len)
         snprintf(message, sizeof(message), "%s acabou de se conectar! \n", pss->username);
         send_message_to_users(pss, message, strlen(message), true);
     }
+
+    // isco: second message is room
     else if (pss->roomId[0] == '\0')
     {
         strncpy(pss->roomId, (const char *)in, len);
@@ -97,12 +94,59 @@ void callback_receive(struct per_session_data *pss, void *in, size_t len)
         snprintf(message, sizeof(message), "%s entrou na sala (%s)! \n", pss->username, pss->roomId);
         send_message_to_users(pss, message, strlen(message), true);
     }
+
+    // isco: after this, only messages to others users in the room
     else
     {
         pss->len = len < MAX_MESSAGE_SIZE ? len : MAX_MESSAGE_SIZE - 1;
         memcpy(pss->message, in, pss->len);
         pss->message[pss->len] = '\0';
         send_message_to_users(pss, pss->message, strlen(pss->message), true);
+    }
+}
+
+void callback_closed(struct per_session_data *pss)
+{
+    for (size_t i = 0; i < client_count; ++i)
+    {
+        if (clients[i] == pss)
+        {
+            clients[i] = clients[--client_count];
+            break;
+        }
+    }
+
+    char message[MAX_MESSAGE_SIZE];
+    snprintf(message, sizeof(message), "%s saiu do chat! \n", pss->username);
+    send_message_to_users(pss, message, strlen(message), false);
+}
+
+void callback_established(struct per_session_data *pss, struct lws *wsi)
+{
+    if (client_count < MAX_CLIENTS)
+    {
+        pss->wsi = wsi;
+        clients[client_count++] = pss;
+        on_user_connected(pss);
+    }
+    else
+    {
+        char message[MAX_MESSAGE_SIZE];
+        snprintf(message, sizeof(message), "o servidor está lotado (%zu usuários online)! espere um pouco e tente novamente", client_count);
+        send_message_to_users(pss, message, strlen(message), false);
+    }
+}
+
+void callback_writeable(struct per_session_data *pss, struct lws *wsi)
+{
+    if (pss->len > 0)
+    {
+        unsigned char buf[LWS_PRE + 128];
+        unsigned char *p = &buf[LWS_PRE];
+        size_t n = sprintf((char *)p, "%s", pss->message);
+        lws_write(wsi, p, n, LWS_WRITE_TEXT);
+        lws_write(wsi, p, n, LWS_WRITE_PING);
+        pss->len = 0; // limpa o buffer
     }
 }
 
@@ -113,21 +157,7 @@ int callback(struct lws *wsi, enum lws_callback_reasons reason, void *user, void
     switch (reason)
     {
     case LWS_CALLBACK_ESTABLISHED:
-        // TODO: colocar o usuario na room escolhida (DONE)
-
-        if (client_count < MAX_CLIENTS)
-        {
-            pss->wsi = wsi;
-            clients[client_count++] = pss;
-            on_user_connected(pss);
-        }
-        else
-        {
-            // TODO: jogar essa mensagem no servidor
-            printf("ja tem gente demais na sala! espera um pouco ae! \n");
-            return -1;
-        }
-
+        callback_established(pss, wsi);
         break;
 
     case LWS_CALLBACK_RECEIVE:
@@ -135,30 +165,11 @@ int callback(struct lws *wsi, enum lws_callback_reasons reason, void *user, void
         break;
 
     case LWS_CALLBACK_SERVER_WRITEABLE:
-        if (pss->len > 0)
-        {
-            unsigned char buf[LWS_PRE + 128];
-            unsigned char *p = &buf[LWS_PRE];
-            size_t n = sprintf((char *)p, "%s", pss->message);
-            lws_write(wsi, p, n, LWS_WRITE_TEXT);
-            lws_write(wsi, p, n, LWS_WRITE_PING);
-            pss->len = 0; // limpa o buffer
-        }
-
+        callback_writeable(pss, wsi);
         break;
 
     case LWS_CALLBACK_CLOSED:
-        for (size_t i = 0; i < client_count; ++i)
-        {
-            if (clients[i] == pss)
-            {
-                clients[i] = clients[--client_count];
-                break;
-            }
-        }
-
-        printf("um qualhira saiu, agora temos apenas essa quantidade na sala: %zu\n", client_count);
-
+        callback_closed(pss);
         break;
 
     default:
